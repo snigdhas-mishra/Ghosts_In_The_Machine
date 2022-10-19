@@ -1,4 +1,4 @@
-# Built using https://www.gymlibrary.dev/content/environment_creation/. 
+# Built using inspiration from https://www.gymlibrary.dev/content/environment_creation/. 
 # Can be modified to be registered to OpenAI gym later.
 
 from tkinter.tix import CELL
@@ -10,7 +10,6 @@ import copy
 from math import floor
 from util import *
 
-DIRECTIONAL_VISIBILITY= True
 
 class GridWorldEnv:
 
@@ -24,11 +23,7 @@ class GridWorldEnv:
 
         # We have 4 actions, corresponding to "right", "up", "left", "down"
 
-        """
-        The following dictionary maps abstract actions from `self.action_space` to 
-        the direction we will walk in if that action is taken.
-        I.e. 0 corresponds to "right", 1 to "up" etc.
-        """
+  
         self.num_ghosts = ghosts
         self.allocate_resources()
         self.blocking_walls = blocking_walls
@@ -91,6 +86,7 @@ class GridWorldEnv:
         return self.play_grid, self.agent_location
 
     def step_agent(self,direction):
+        # Verify and Register changes to Agent, during a step.
         new_X,new_Y = (self.agent_location.x+direction[0], self.agent_location.y + direction[1])
         step_success = is_valid_agent_state(self.grid,Pos(new_X,new_Y))
         if step_success:
@@ -106,6 +102,7 @@ class GridWorldEnv:
         return step_success
 
     def step_ghosts(self):
+        # Implement and Register changes to Ghosts, during a step.
         for i in range(len(self.ghost_locations)):  
             gh = self.ghost_locations[i]
             possible_actions = []
@@ -128,6 +125,7 @@ class GridWorldEnv:
             self.ghost_locations[i]=potential_new_position
         
     def step(self,direction):
+        # Accept an action from the agent. Verfiy and change the game state accordingly. 
         if self.death:
             if self.verbose:
                 print('AGENT IS DEAD!!')
@@ -138,6 +136,7 @@ class GridWorldEnv:
         return self.play_grid, step_success, self.death, self.agent_location, (self.agent_location == self.target)
 
     def init_agent(self):
+        # Initialize agent.
         if self.verbose:
             print('Initialising agent ... ')
         self.agent_location= Pos(0,0)
@@ -145,6 +144,7 @@ class GridWorldEnv:
         self.agent_path[0,0]=1
     
     def let_there_be_ghosts(self):
+        # Initialize ghosts.
         if self.verbose:
             print('Creating ghosts ...')
         #Pull all the nodes that can be visited from the target. 
@@ -156,6 +156,9 @@ class GridWorldEnv:
             self.play_grid[gh.x,gh.y]=2
 
     def get_ghost_locations(self):
+
+        # LINE-OF-SIGHT BLOCKING MECHANISM.
+
         if self.blocking_walls is False:
             return self.ghost_locations
         else:
@@ -164,15 +167,14 @@ class GridWorldEnv:
                 x_range = (min(ghost.x,self.agent_location.x),max(ghost.x,self.agent_location.x)+0.01)
                 y_range = (min(ghost.y,self.agent_location.y),max(ghost.y,self.agent_location.y)+0.01)
                 if x_range[0]==x_range[1]:
-                    visibility = all([self.grid[x_range[0],y]!=1 for y in range(*y_range)])
+                    visibility = all([self.play_grid[x_range[0],y]!=1 for y in range(*y_range)])
                 elif y_range[0]==y_range[1]:
-                    visibility= all([self.grid[x,y_range[0]]!=1 for x in range(*x_range)])
+                    visibility= all([self.play_grid[x,y_range[0]]!=1 for x in range(*x_range)])
                 else:
                     diff = max(x_range[1]-x_range[0],y_range[1]-y_range[0])
                     x_steps= np.arange(x_range[0],x_range[1],(x_range[1]-x_range[0])/diff)
                     y_steps= np.arange(y_range[0],y_range[1],(y_range[1]-y_range[0])/diff)
-                    #visibility = [self.grid[int(x),int(y)]!=1 for (x,y) in zip(x_steps,y_steps)]
-                    #visibility = all(visibility)
+
                     visibility = (self.grid[x_steps.astype(np.int32),y_steps.astype(np.int32)]!=1).all()
                     #assert visibility1==visibility,'Error'
                 if visibility is True:
@@ -183,6 +185,8 @@ class GridWorldEnv:
                 
 
     def precompute_shortest_paths(self):
+
+        # A simpler version of single-source shortest-path algorithm for unweighted graphs.
         if self.verbose:
             print('Precomputing shortest paths ... ')
         sh_path={}
@@ -236,6 +240,7 @@ class GridWorldEnv:
         
 
     def get_valid_next_steps(self,pos):
+        # A utility functions to provide non-blocked next states.
         valid_actions=[]
         for _,direction in ACTIONS.items():
             new_X,new_Y = (pos.x+direction[0], pos.y + direction[1])
@@ -258,6 +263,8 @@ class GridWorldEnv:
         print(pd.DataFrame(printable_vals))
 
     def quick_dfs(self):
+        # Quick code to verify that the grid is solvable. 
+        # Runs DFS to find a path between source and target. 
         start_node=Pos(0,0)
         visited_nodes={}
         queue = []

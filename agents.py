@@ -28,10 +28,13 @@ class Agent2(Agent):
     
     def next_action(self,agent_location):
         self.agent_location = agent_location
-        limited_bfs_result = self.run_limited_bfs()
+
+        limited_bfs_result = self.run_limited_bfs() # Check whether shortest paths from possible next states are blocked. 
         if limited_bfs_result is not None:
             return limited_bfs_result
         else:
+            # If all shortest paths are blocked, forget everything and run away from the nearest scary ghost. 
+
             min_ghost = self.get_nearest_ghost()
             if min_ghost is None:
                 return None
@@ -48,7 +51,6 @@ class Agent2(Agent):
                 print(action)
                 if is_safe_agent_state(self.play_grid,Pos(agent_location.x+action[0],agent_location.y+action[1])):
                     return action
-            #print(min_ghost,self.agent_location,action)
             return (0,0)
 
 
@@ -69,6 +71,7 @@ class Agent2(Agent):
 
 
     def run_limited_bfs(self):
+        #Run limited length BFS for Agent2's exploration.
         nodes_at_threshold =[]
         visited={}
         next_action_locations = [(u,1,Pos(self.agent_location.x + u[0],self.agent_location.y +u[1])) for u in ACTIONS.values()]
@@ -90,6 +93,7 @@ class Agent2(Agent):
             nodes_at_threshold.sort(key=lambda x:self.sh_path_dist[x[2]])
             return nodes_at_threshold[0][0]
         
+        return (0,0)
 
 
         
@@ -108,9 +112,12 @@ class Agent3(Agent):
         self.agent_location = agent_location
         next_action_locations = [(u,Pos(self.agent_location.x + u[0],self.agent_location.y +u[1])) for u in ACTIONS.values()]
         next_action_locations = [u for u in next_action_locations if is_safe_agent_state(self.play_grid,u[1])]
+
+        # Save game state, so we can recover from simulations. 
         saved_game_state = self.env.save_state()
         results =[]
         for next_action in next_action_locations:
+            # For each next possible action, simulate multiple futures with agent2. 
             death_probability, mean_remaining_path = self.simulate_future(next_action[0],saved_game_state)
             self.env.load_state(saved_game_state)
             self.agent_location = self.env.obs()[1]
@@ -125,6 +132,8 @@ class Agent3(Agent):
         return next_action
 
     def simulate_future(self,next_action,saved_game_state):
+
+        # Run a MCTS search to simulate the future. 
         death_probability = []
         remaining_path = []
         initial_action = next_action
@@ -135,8 +144,7 @@ class Agent3(Agent):
             play_grid, step_success, death, agent_location, success = self.env.step(next_action)
 
             while death is False and success is False and simulation_len>0:
-                #print('Episode No {0}/{1}'.format(episode_num,episode_limit))
-                #episode_num +=1
+
                 next_action = self.agent2.next_action(agent_location)
                 play_grid, step_success, death, agent_location, success = self.env.step(next_action)
                 if step_success: 
@@ -170,7 +178,6 @@ class Agent4(Agent):
         next_action_sh_path = [self.env.sh_path_dist[u[1]] for u in next_action_locations]
         max_sh_path = max(next_action_sh_path)
         max_sh_path = max(1,(max_sh_path*self.penalty_multiplier))
-        #max_sh_path = self.penalty_exponent
         next_action_sh_pen = [(sum(self.get_ghost_penalty_heuristic(next_action_locations[idx][1]))* max_sh_path + next_action_sh_path[idx]
                                                                                     ,next_action_sh_path[idx],*next_action_locations[idx]) 
                                                                                     for idx in range(len(next_action_locations))]
@@ -178,6 +185,7 @@ class Agent4(Agent):
         return next_action_sh_pen[0][2]
 
     def get_ghost_penalty_heuristic(self,loc):
+        # Calculate the ghost penalty as describe in Equation 2 in the Lab report. 
         penalty = []
         for ghost in self.env.get_ghost_locations():
             x_diff = np.abs(ghost.x-loc.x)
@@ -185,3 +193,30 @@ class Agent4(Agent):
             if x_diff<self.ghost_penalty_threshold or y_diff <self.ghost_penalty_threshold:
                 penalty.append((self.penalty_func(x_diff+y_diff)))
         return penalty
+
+
+class Agent5(Agent4):
+    def __init__(self, env, penalty_multiplier, penalty_exponent, neighborhood_range=1,n_penalty_multiplier=0.5) -> None:
+        super().__init__(env,penalty_multiplier, penalty_exponent)
+        self.neighborhood_range =neighborhood_range
+        self.n_penalty_multiplier = n_penalty_multiplier
+
+    
+    def next_action(self,agent_location):
+
+        # Run same heuristics as Agent4 and add "get_neighborhood_preference" penalty. 
+        self.agent_location = agent_location
+        next_action_locations = [(u,Pos(self.agent_location.x + u[0],self.agent_location.y +u[1])) for u in ACTIONS.values()]
+        next_action_locations = [u for u in next_action_locations if is_safe_agent_state(self.play_grid,u[1])]
+        if len(next_action_locations)==0:
+            return (0,0)
+        next_action_sh_path = [self.env.sh_path_dist[u[1]] for u in next_action_locations]
+        max_sh_path = max(next_action_sh_path)
+        max_sh_path = max(1,(max_sh_path*self.penalty_multiplier))
+        next_action_sh_pen = [(sum(self.get_ghost_penalty_heuristic(next_action_locations[idx][1]))* max_sh_path + next_action_sh_path[idx]
+                                + self.n_penalty_multiplier * get_neighborhood_preference(self.env.grid, next_action_locations[idx][1],self.env.size,self.neighborhood_range)
+                                                                                    ,next_action_sh_path[idx],*next_action_locations[idx]) 
+                                                                                    for idx in range(len(next_action_locations))]
+        next_action_sh_pen.sort(key= lambda x:x[:2])
+        return next_action_sh_pen[0][2]
+
